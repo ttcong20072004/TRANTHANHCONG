@@ -1,0 +1,471 @@
+Tổng quan hệ thống
+Bạn sẽ cần 3 máy ảo (VirtualBox hoặc VMware):
+
+Wazuh Server - Ubuntu 20.04 LTS
+Target Server - Ubuntu 20.04 LTS (cài DVWA)
+Attacker - Kali Linux
+
+PHẦN 1: CHUẨN BỊ MÁY ẢO
+Bước 1.1: Tạo 3 máy ảo
+Máy ảo 1 - Wazuh Server:
+
+OS: Ubuntu 24.04 LTS Desktop/Server
+RAM: 4GB (tối thiểu)
+CPU: 2 cores
+Disk: 50GB
+Network: Bridge Adapter hoặc NAT Network
+
+Máy ảo 2 - Target Server:
+
+OS: Ubuntu 24.04 LTS
+RAM: 2GB
+CPU: 1-2 cores
+Disk: 20GB
+Network: Cùng dải mạng với Wazuh Server
+
+Máy ảo 3 - Kali Linux:
+
+OS: Kali Linux (tải từ kali.org)
+RAM: 2GB
+CPU: 2 cores
+Disk: 20GB
+Network: Cùng dải mạng với 2 máy trên
+
+Bước 1.2: Cấu hình mạng
+Trên mỗi máy, kiểm tra IP:
+ip addr show
+# Hoặc
+ifconfig
+Ghi chú các IP:
+
+Wazuh Server: 192.168.147.166
+Target Server: 192.168.147.167
+Kali Linux: 192.168.147.168
+
+Đảm bảo 3 máy ping được lẫn nhau:
+
+PHẦN 2: CÀI ĐẶT WAZUH SERVER
+Bước 2.1: Cài đặt Wazuh All-in-One
+Trên máy Wazuh Server, mở Terminal và chạy:
+# Update hệ thống
+sudo apt update && sudo apt upgrade -y
+
+# Cài đặt các gói cần thiết
+sudo apt install -y gnupg apt-transport-https curl
+
+# Thêm GPG key của Wazuh
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --dearmor -o /usr/share/keyrings/wazuh.gpg
+
+# Thêm repository Wazuh
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
+
+# Update lại
+sudo apt update
+Bước 2.2: Chạy script cài đặt tự động
+# Tải script cài đặt
+curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
+
+# Chạy script với tùy chọn All-in-One
+sudo bash ./wazuh-install.sh -a
+
+**Quá trình cài đặt mất khoảng 10-15 phút.** Script sẽ tự động cài:
+- Wazuh Manager
+- Wazuh Indexer (thay Elasticsearch)
+- Wazuh Dashboard (thay Kibana)
+
+### Bước 2.3: Lưu thông tin đăng nhập
+
+Khi hoàn tất, script sẽ hiển thị thông tin quan trọng:
+INFO: --- Summary ---
+INFO: You can access the web interface https://192.168.147.166
+    User: admin
+    Password: AbC123XyZ...
+Lưu lại password này! Bạn sẽ cần nó để đăng nhập Dashboard.
+Bước 2.4: Kiểm tra dịch vụ
+# Kiểm tra Wazuh Manager
+sudo systemctl status wazuh-manager
+
+# Kiểm tra Wazuh Indexer
+sudo systemctl status wazuh-indexer
+
+# Kiểm tra Wazuh Dashboard
+sudo systemctl status wazuh-dashboard
+
+Tất cả phải có trạng thái **active (running)**.
+
+### Bước 2.5: Truy cập Wazuh Dashboard
+
+Mở trình duyệt trên máy host (hoặc trong Ubuntu) và truy cập:
+https://192.168.147.166
+Bỏ qua cảnh báo SSL (vì dùng self-signed certificate), đăng nhập với:
+
+Username: admin
+Password: (password đã lưu ở bước 2.3)
+
+
+PHẦN 3: CÀI ĐẶT TARGET SERVER (DVWA)
+Bước 3.1: Cài đặt Apache, MySQL, PHP
+Trên máy Target Server, chạy:
+# Update hệ thống
+sudo apt update && sudo apt upgrade -y
+
+# Cài đặt Apache
+sudo apt install -y apache2
+
+# Cài đặt MySQL
+sudo apt install -y mysql-server
+
+# Cài đặt PHP và các module cần thiết
+sudo apt install -y php php-mysqli php-gd libapache2-mod-php
+
+# Khởi động Apache
+sudo systemctl start apache2
+sudo systemctl enable apache2
+Kiểm tra Apache hoạt động:
+# Mở trình duyệt truy cập
+http://192.168.147.167
+Bạn sẽ thấy trang "Apache2 Ubuntu Default Page".
+Bước 3.2: Cài đặt DVWA
+# Di chuyển vào thư mục web root
+cd /var/www/html
+
+# Tải DVWA từ GitHub
+sudo git clone https://github.com/digininja/DVWA.git
+
+# Nếu chưa có git, cài đặt trước
+sudo apt install -y git
+Bước 3.3: Cấu hình DVWA
+# Di chuyển vào thư mục DVWA
+cd /var/www/html/DVWA
+
+# Copy file cấu hình mẫu
+sudo cp config/config.inc.php.dist config/config.inc.php
+
+# Chỉnh sửa file cấu hình
+sudo nano config/config.inc.php
+Tìm và sửa các dòng sau:
+php$_DVWA[ 'db_server' ]   = '127.0.0.1';
+$_DVWA[ 'db_database' ] = 'dvwa';
+$_DVWA[ 'db_user' ]     = 'dvwa';
+$_DVWA[ 'db_password' ] = 'p@ssw0rd';
+Lưu file (Ctrl+O, Enter, Ctrl+X).
+Bước 3.4: Tạo database cho DVWA
+# Đăng nhập MySQL
+sudo mysql -u root
+
+# Trong MySQL prompt, chạy:
+CREATE DATABASE dvwa;
+CREATE USER 'dvwa'@'127.0.0.1' IDENTIFIED BY 'p@ssw0rd';
+GRANT ALL PRIVILEGES ON dvwa.* TO 'dvwa'@'127.0.0.1';
+FLUSH PRIVILEGES;
+EXIT;
+Bước 3.5: Cấu hình quyền
+# Phân quyền cho thư mục DVWA
+sudo chmod -R 755 /var/www/html/DVWA
+sudo chown -R www-data:www-data /var/www/html/DVWA
+
+# Khởi động lại Apache
+sudo systemctl restart apache2
+
+### Bước 3.6: Setup DVWA qua web
+Mở trình duyệt, truy cập:
+http://192.168.147.167/DVWA/setup.php
+
+Kéo xuống cuối trang, nhấn nút **"Create / Reset Database"**.
+
+Sau đó đăng nhập DVWA tại:
+```
+http://192.168.147.167/DVWA/login.php
+Thông tin đăng nhập mặc định:
+
+Username: admin
+Password: password
+
+Bước 3.7: Đặt Security Level = Low
+Sau khi đăng nhập DVWA:
+
+Vào menu DVWA Security
+Chọn Low trong dropdown
+Nhấn Submit
+
+PHẦN 4: CÀI ĐẶT WAZUH AGENT TRÊN TARGET
+Bước 4.1: Thêm repository Wazuh
+Trên máy Target Server:
+# Cài đặt gói cần thiết
+sudo apt install -y gnupg apt-transport-https curl
+
+# Thêm GPG key
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --dearmor -o /usr/share/keyrings/wazuh.gpg
+
+# Thêm repository
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
+
+# Update
+sudo apt update
+Bước 4.2: Cài đặt Wazuh Agent
+WAZUH_MANAGER="192.168.147.166" 
+sudo apt install -y wazuh-agent
+Bước 4.3: Khởi động Agent
+
+sudo systemctl daemon-reload
+sudo systemctl enable wazuh-agent
+sudo systemctl start wazuh-agent
+Bước 4.4: Kiểm tra Agent
+# Kiểm tra trạng thái
+sudo systemctl status wazuh-agent
+# Kiểm tra kết nối
+sudo cat /var/ossec/logs/ossec.log | grep "Connected to the server"
+Bạn sẽ thấy dòng: "Connected to the server (192.168.147.166:1514/tcp)".
+Bước 4.5: Cấu hình Agent đọc Apache log
+# Mở file cấu hình
+sudo nano /var/ossec/etc/ossec.conf
+Tìm phần <ossec_config> và thêm vào:
+xml
+<localfile>
+  <log_format>apache</log_format>
+  <location>/var/log/apache2/access.log</location>
+</localfile>
+
+<localfile>
+  <log_format>apache</log_format>
+  <location>/var/log/apache2/error.log</location>
+</localfile>
+Lưu file (Ctrl+O, Enter, Ctrl+X).
+Bước 4.6: Khởi động lại Agent
+sudo systemctl restart wazuh-agent
+Bước 4.7: Xác nhận Agent trong Dashboard
+Quay lại Wazuh Dashboard (https://192.168.147.166):
+
+Vào menu Agents
+Bạn sẽ thấy agent mới với IP 192.168.147.167 và status Active
+
+
+PHẦN 5: CẤU HÌNH QUY TẮC PHÁT HIỆN TẤN CÔNG
+Bước 5.1: Tạo custom rules trên Wazuh Server
+Trên máy Wazuh Server:
+# Mở file custom rules
+sudo nano /var/ossec/etc/rules/local_rules.xml
+Bước 5.2: Thêm quy tắc phát hiện
+Xóa nội dung cũ (nếu có) và thêm vào:
+xml
+<group name="web_attacks,">
+  
+  <!-- SQL Injection Detection -->
+  <rule id="100100" level="12">
+    <if_sid>31100</if_sid>
+    <match>union(\s|\+)*select|select(\s|\+)*from|'(\s)*or(\s)*1=1|admin'--</match>
+    <description>Possible SQL Injection attack detected</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>sql_injection,pci_dss_6.5.1,pci_dss_11.4,gdpr_IV_35.7.d,hipaa_164.312.b,nist_800_53_SI.4,tsc_CC6.6,tsc_CC7.1,</group>
+  </rule>
+
+  <!-- XSS Detection -->
+  <rule id="100101" level="12">
+    <if_sid>31100</if_sid>
+    <match>&lt;script|javascript:|onerror=|onload=|alert\(</match>
+    <description>Possible Cross-Site Scripting (XSS) attack detected</description>
+    <mitre>
+      <id>T1059</id>
+    </mitre>
+    <group>xss,pci_dss_6.5.7,pci_dss_11.4,gdpr_IV_35.7.d,nist_800_53_SI.4,tsc_CC6.6,tsc_CC7.1,</group>
+  </rule>
+
+  <!-- Command Injection Detection -->
+  <rule id="100102" level="12">
+    <if_sid>31100</if_sid>
+    <match>;cat|;ls|;wget|;curl|;nc|/bin/(bash|sh)</match>
+    <description>Possible Command Injection attack detected</description>
+    <mitre>
+      <id>T1059</id>
+    </mitre>
+    <group>command_injection,pci_dss_6.5.1,nist_800_53_SI.4,tsc_CC6.6,</group>
+  </rule>
+
+  <!-- Path Traversal Detection -->
+  <rule id="100103" level="12">
+    <if_sid>31100</if_sid>
+    <match>../|..%2f|%2e%2e/|etc/passwd|boot.ini</match>
+    <description>Possible Path Traversal attack detected</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>path_traversal,pci_dss_6.5.8,nist_800_53_SI.4,tsc_CC6.6,</group>
+  </rule>
+
+</group>
+Lưu file (Ctrl+O, Enter, Ctrl+X).
+Bước 5.3: Kiểm tra cú pháp rules
+sudo /var/ossec/bin/wazuh-logtest
+Nhấn Ctrl+C để thoát nếu không có lỗi.
+Bước 5.4: Khởi động lại Wazuh Manager
+sudo systemctl restart wazuh-manager
+Kiểm tra log:
+sudo tail -f /var/ossec/logs/ossec.log
+Đảm bảo không có lỗi và thấy dòng "Started".
+
+PHẦN 6: THỰC HIỆN TẤN CÔNG TỪ KALI LINUX
+Bước 6.1: Chuẩn bị Kali Linux
+Trên máy Kali Linux, mở Terminal.
+Kiểm tra kết nối đến Target:
+ping 192.168.147.167
+
+curl http://192.168.147.167/DVWA/
+Bước 6.2: Tấn công SQL Injection
+Test 1 - SQLi đơn giản:
+curl -G \
+--data-urlencode "id=1' OR '1'='1" \
+--data-urlencode "Submit=Submit" \
+"http://192.168.147.167/DVWA/vulnerabilities/sqli/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Lấy session ID:
+Mở Firefox trong Kali, đăng nhập DVWA, nhấn F12 > Storage > Cookies, copy giá trị PHPSESSID.
+Test 2 - UNION SELECT:
+curl -G \
+--data-urlencode "id=1 UNION SELECT null,version()" \
+--data-urlencode "Submit=Submit" \
+"http://192.168.147.167/DVWA/vulnerabilities/sqli/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Test 3 - Dùng SQLMap (nâng cao):
+sqlmap -u "http://192.168.147.167/DVWA/vulnerabilities/sqli/?Submit=Submit" \
+--cookie="PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low" \
+--batch --banner
+Bước 6.3: Tấn công XSS
+Test 1 - Reflected XSS:
+curl -G \
+--data-urlencode "name=<script>alert('XSS')</script>" \
+"http://192.168.147.167/DVWA/vulnerabilities/xss_r/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Test 2 - XSS với event handler:
+curl -G \
+--data-urlencode "name=<img src=x onerror=alert(1)>" \
+"http://192.168.147.167/DVWA/vulnerabilities/xss_r/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Bước 6.4: Tấn công Command Injection
+Test 1: Đọc /etc/passwd
+curl -G \
+--data-urlencode "ip=127.0.0.1;cat /etc/passwd" \
+"http://192.168.147.167/DVWA/vulnerabilities/exec/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Test 2: Liệt kê thư mục
+curl -G \
+--data-urlencode "ip=127.0.0.1|ls -la" \
+"http://192.168.147.167/DVWA/vulnerabilities/exec/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+
+Bước 6.5: Tấn công Path Traversal
+Test 1: Đọc /etc/passwd
+curl -G \
+--data-urlencode "page=../../../../../etc/passwd" \
+"http://192.168.147.167/DVWA/vulnerabilities/fi/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+Test 2: Bypass filter
+curl -G \
+--data-urlencode "page=....//....//....//etc/passwd" \
+"http://192.168.147.167/DVWA/vulnerabilities/fi/" \
+--cookie "PHPSESSID=ai6b07ido9q0e86d80d7k477s8; security=low"
+
+PHẦN 7: QUAN SÁT VÀ PHÂN TÍCH CẢNH BÁO
+Bước 7.1: Kiểm tra log trên Target Server
+Bước 7.1.1: Đăng nhập Target Server
+ Thực hiện trên Wazuh Server / máy quản trị
+ssh ubuntucong@192.168.147.167
+ Kết quả mong đợi: Welcome to Ubuntu 24.04 LTS
+ Bước 7.1.2: Xác nhận Apache đang chạy (bắt buộc)
+ Trên Target Server
+	sudo systemctl status apache2
+ Trạng thái đúng: Active: active (running)
+ Bước 7.1.3: Theo dõi Apache access log real-time
+ Trên Target Server
+	sudo tail -f /var/log/apache2/access.log
+ Lệnh này dùng để:
+	Xem từng request HTTP
+	Thấy rõ IP attacker
+	Thấy URL + payload
+   kết quả:
+	ubuntucong@victim-ubuntu :~ $ sudo tail -f /var/log/apache2/access.log
+	:: 1 - - [25/Dec/2025:01:52:44 +0700] "GET /index.php?id=test HTTP/1.1" 200 165 " -" "curl/8.5.0"
+	192.168.147.168 - - [25/Dec/2025:01:53:03 +0700] "GET /index. php?id=1%2OUNION%20SELECT%
+	201,2,3 HTTP/1.1" 200 181 "-" "curl/8.17.0"
+# Tìm các request tấn công
+Tìm SQL Injection (SELECT)
+sudo grep -i "select" /var/log/apache2/access.log
+Kết quả:
+	192.168.147.168 - - [25/Dec/2025:01:53:03 +0700] "GET /index.php?id=1%20UNION%20SELECT%201,2,3 HTTP/1.1" 200 181 "-" "curl/8.17.0"
+Tìm UNION (SQL Injection nâng cao)
+sudo grep -i "script" /var/log/apache2/access.log
+Kết quả:
+
+Tìm XSS (<script>)
+sudo grep -i "union" /var/log/apache2/access.log
+Kết quả:
+	192.168.147.168 - - [25/Dec/2025:01:53:03 +0700] "GET /index.php?id=1%20UNION%20SELECT%201,2,3 HTTP/1.1" 200 181 "-" "curl/8.17.0"
+Bước 7.2: Xem alerts trong Wazuh Dashboard
+Truy cập Dashboard:  	https://192.168.147.166
+Cách 1 - Threat Hunting:
+
+ gõ:	 rule.id:(100100 OR 100101 OR 100102 OR 100103)
+Chọn thời gian: Last 1 hour
+Nhấn Refresh
+
+Cách 2 - Security Events:
+
+Vào menu Security Events
+Lọc theo Rule ID
+Nhập: 100100 (SQLi), 100101 (XSS), 100102 (Command Injection), 100103 (Path Traversal)
+
+Bước 7.3: Phân tích chi tiết alert
+Khi thấy alert, nhấp vào dòng alert đó để xem:
+
+agent.name: Tên agent (Target Server)
+rule.description: Mô tả tấn công
+rule.level: Mức độ nghiêm trọng (12 = cao)
+rule.mitre.id: MITRE ATT&CK technique
+data.srcip: IP kẻ tấn công (Kali: 192.168.147.168)
+data.url: URL bị tấn công
+full_log: Toàn bộ log Apache
+
+Bước 7.4: Tạo Dashboard tùy chỉnh
+
+Vào Visualize
+Tạo biểu đồ:
+
+Pie Chart: Phân bố loại tấn công (theo rule.description)
+Bar Chart: Số lượng tấn công theo thời gian
+Data Table: Top IP tấn công nhiều nhất
+
+Lưu visualizations
+Vào Dashboard > Create new dashboard > Thêm visualizations vừa tạo
+
+PHẦN 8: XỬ LÝ VÀ ỨNG PHÓ
+Bước 8.1: Tạo Active Response (tự động block IP)
+Trên Wazuh Server: sudo nano /var/ossec/etc/ossec.conf
+Thêm vào cuối file (trước </ossec_config>):
+xml
+<command>
+  <name>firewall-drop</name>
+  <executable>firewall-drop</executable>
+  <timeout_allowed>yes</timeout_allowed>
+</command>
+
+<active-response>
+  <command>firewall-drop</command>
+  <location>local</location>
+  <rules_id>100100,100101,100102,100103</rules_id>
+  <timeout>600</timeout>
+</active-response>
+Giải thích:
+
+firewall-drop: Script block IP bằng iptables
+rules_id: Khi phát hiện rule này, tự động block
+timeout: Block trong 600 giây (10 phút)
+
+Khởi động lại:
+sudo systemctl restart wazuh-manager
+
+Bước 8.2: Kiểm tra Active Response
+Thực hiện lại tấn công từ Kali. Sau vài lần, IP Kali sẽ bị block.
+Kiểm tra trên Target Server:
+sudo iptables -L -n | grep 192.168.147.168
+Bạn sẽ thấy rule DROP cho IP Kali.
