@@ -1,0 +1,121 @@
+🛡️ HƯỚNG DẪN CÀI ĐẶT OSSEC HIDS (SERVER + AGENT)
+🧱 I. Mô hình demo
+[ Attacker ]  --->  [ OSSEC Server ]  <---  [ OSSEC Agent ]
+
+
+OSSEC Server: phân tích, nhận log
+
+OSSEC Agent: gửi log về server
+
+🖥️ II. Cài OSSEC Server
+✅ Bước 1: Cài gói phụ thuộc
+sudo apt update
+sudo apt install -y build-essential libpcre2-dev zlib1g-dev libssl-dev libsystemd-dev
+
+✅ Bước 2: Tải OSSEC
+cd ~
+wget https://github.com/ossec/ossec-hids/archive/3.7.0.tar.gz
+
+✅ Bước 3: Giải nén
+tar -xvzf 3.7.0.tar.gz
+ 
+cd ~/ossusec-hids-3.7.0
+✅ Bước 4: Cài đặt OSSEC Server
+sudo ./install.sh
+
+
+Khi hỏi chọn:
+
+(server, agent, local, hybrid) -> server
+
+
+Các câu còn lại cứ Enter.
+
+sudo nano /var/ossec/etc/ossec.conf
+  <port>1514</port>
+  <protocol>udp</protocol>
+ <email_notification>no</email_notification>
+✅ Bước 5: Khởi động
+sudo /var/ossec/bin/ossec-control start
+
+
+Kiểm tra:
+
+sudo /var/ossec/bin/ossec-control status
+
+🖥️ III. Cài OSSEC Agent
+
+Thực hiện trên máy Agent.
+
+✅ Bước 1: Cài phụ thuộc
+sudo apt update
+sudo apt install -y build-essential gcc make wget tar unzip libz-dev libssl-dev
+
+✅ Bước 2: Tải OSSEC
+cd ~
+wget https://github.com/ossec/ossec-hids/archive/3.7.0.tar.gz
+
+✅ Bước 3: Giải nén
+tar -xvzf 3.7.0.tar.gz
+cd ossec-hids-3.7.0
+
+✅ Bước 4: Cài OSSEC Agent
+sudo ./install.sh
+
+
+Chọn:
+
+(server, agent, local, hybrid) -> agent
+
+
+Nhập IP OSSEC Server khi hỏi.
+
+✅ Bước 5: Start agent
+sudo /var/ossec/bin/ossec-control start
+
+🔗 IV. Add Agent vào Server
+
+Thực hiện trên Server:
+
+sudo /var/ossec/bin/manage_agents
+
+
+Chọn:
+
+A  -> add agent
+E  -> extract key
+Q  -> quit
+
+
+Copy key.
+
+Trên Agent:
+
+sudo /var/ossec/bin/manage_agents
+
+
+Chọn:
+
+I -> import key
+
+
+Paste key.
+
+Restart cả hai:
+
+sudo /var/ossec/bin/ossec-control restart
+
+🧪 V. Test demo
+
+SSH sai mật khẩu trên agent:
+
+ssh test@agent-ip
+
+
+Xem alert trên server:
+
+sudo tail -f /var/ossec/logs/alerts/alerts.log
+
+🎯 Kết quả
+
+Agent → gửi log → Server → phân tích → alert.
